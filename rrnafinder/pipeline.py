@@ -84,7 +84,7 @@ def rRNAFinder_main(args):
     blastn_output = outfmt5_read(blast_out_file)
     hsp_list = blastn_output[query_seq_list[0].seqname].hit[0].hsp
 
-    query_str_dict = tsv_file_dict_parse(args.query_rRNA_bed, seq=",", key_col='name',
+    query_str_dict = tsv_file_dict_parse(args.query_rRNA_bed, delimiter=",", key_col='name',
                                          fieldnames=['name', 'contig', 'start', 'end'])
 
     # get each rRNA gene
