@@ -1,31 +1,30 @@
 # rRNAFinder
-A python tool for identify rRNA gene in plant genome.
+rRNAFinder is a Python tool designed to identify rRNA genes in the genome.
 
 ## Installation
-This package depended on ncbi blast, you should install it first.
+This package relies on NCBI BLAST and BLAT. Please ensure these are installed prior to installing rRNAFinder.
 
-Install rRNAFinder with pip:
+To install rRNAFinder using pip, use the following command:
 ```
 pip install rRNAFinder
 ```
 
 ## Usage
 ```
-usage: rRNAFinder [-h] [-s QUERY_RRNA_SEQ] [-b QUERY_RRNA_BED] [-l LOG_FILE] [-o OUTPUT_DIR] fasta_file
+usage: rRNAFinder [-h] [-s {plants,animals,fungi,bacteria}] [-l LOG_FILE] [-o OUTPUT_DIR] fasta_file
 
-Find rRNA unit and all rRNA in genome
+Identify rRNA genes in the genome
 
 positional arguments:
   fasta_file            a fasta file
 
 optional arguments:
   -h, --help            show this help message and exit
-  -s QUERY_RRNA_SEQ, --query_rRNA_seq QUERY_RRNA_SEQ
-                        a known rRNA unit seq from close species
-  -b QUERY_RRNA_BED, --query_rRNA_bed QUERY_RRNA_BED
-                        bed file for close rRNA unit seq
+  -s {plants,animals,fungi,bacteria}, --species {plants,animals,fungi,bacteria}
   -l LOG_FILE, --log_file LOG_FILE
                         path for log file (default: None)
   -o OUTPUT_DIR, --output_dir OUTPUT_DIR
                         output prefix (default: rRNA_finder)
 ```
+
+Currently only plants genomes are supported

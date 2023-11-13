@@ -1,1 +1,1 @@
-recursive-include rrnafinder/Ath_rRNA *
+recursive-include rrnafinder/rRNA_data *

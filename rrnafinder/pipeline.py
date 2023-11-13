@@ -4,87 +4,89 @@ from Bio.SeqRecord import SeqRecord
 from Bio.SeqFeature import SeqFeature, FeatureLocation
 from BCBio import GFF
 from toolbiox.lib.common.genome.seq_base import reverse_complement, read_fasta_by_faidx, get_seq_index_ignore_gap
-from toolbiox.lib.common.os import rmdir, cmd_run
+from toolbiox.lib.common.os import rmdir, cmd_run, mkdir
 from toolbiox.lib.common.math.interval import section
 from toolbiox.api.common.genome.blast import outfmt5_read
-from hugep2g.src.genblasta import GenBlastAJob
+# from hugep2g.src.genblasta import GenBlastAJob
 from toolbiox.lib.common.fileIO import tsv_file_dict_parse
+from toolbiox.api.common.genome.psl import read_psl_file
 import os
 
-script_dir_path = os.path.split(os.path.realpath(__file__))[0]
+rRNA_data_path = os.path.join(os.path.split(
+    os.path.realpath(__file__))[0], "rRNA_data")
 
-ath_query_rRNA_seq = script_dir_path+"/Ath_rRNA/rRNA.fa"
-ath_query_rRNA_bed = script_dir_path+"/Ath_rRNA/rRNA.bed"
 
-ath_query_rRNA_seq = os.path.abspath(ath_query_rRNA_seq)
-ath_query_rRNA_bed = os.path.abspath(ath_query_rRNA_bed)
+# script_dir_path = os.path.split(os.path.realpath(__file__))[0]
+
+# ath_query_rRNA_seq = script_dir_path+"/Ath_rRNA/rRNA.fa"
+# ath_query_rRNA_18_20S_seq = script_dir_path+"/Ath_rRNA/rRNA_18_20S.fa"
+# ath_query_rRNA_bed = script_dir_path+"/Ath_rRNA/rRNA.bed"
+
+# ath_query_rRNA_seq = os.path.abspath(ath_query_rRNA_seq)
+# ath_query_rRNA_bed = os.path.abspath(ath_query_rRNA_bed)
 
 
 def rRNAFinder_main(args):
     args.fasta_file = os.path.abspath(args.fasta_file)
+    target_seq_dir = read_fasta_by_faidx(args.fasta_file)
 
-    if args.query_rRNA_seq:
-        args.query_rRNA_seq = os.path.abspath(args.query_rRNA_seq)
-    else:
-        args.query_rRNA_seq = ath_query_rRNA_seq
+    rRNA_dir = os.path.join(rRNA_data_path, args.species)
+    rRNA_18_20S_seq = os.path.join(rRNA_dir, "rRNA_18_20S.fa")
+    rRNA_seq = os.path.join(rRNA_dir, "rRNA.fa")
+    rRNA_bed = os.path.join(rRNA_dir, "rRNA.bed")
+    # rRNA_gene_seq = os.path.join(rRNA_dir, "rRNA.gene.fa")
 
-    if args.query_rRNA_bed:
-        args.query_rRNA_bed = os.path.abspath(args.query_rRNA_bed)
-    else:
-        args.query_rRNA_bed = ath_query_rRNA_bed
+    query_seq_dir = read_fasta_by_faidx(rRNA_seq)
+    query_seq_list = [query_seq_dir[i] for i in query_seq_dir]
 
     args.output_dir = os.path.abspath(args.output_dir)
+    mkdir(args.output_dir, True)
     if not args.log_file is None:
         args.log_file = os.path.abspath(args.log_file)
 
     # get rRNA unit
 
-    # genblasta
-    query_seq_dir = read_fasta_by_faidx(args.query_rRNA_seq)
-    target_seq_dir = read_fasta_by_faidx(args.fasta_file)
+    # blat
+    tmp_work_dir = args.output_dir + "/tmp"
+    mkdir(tmp_work_dir)
+    blat_out_psl = tmp_work_dir + "/blat.psl"
+    cmd_string = "blat %s %s -maxIntron=2000 -out=psl %s" % (
+        args.fasta_file, rRNA_18_20S_seq, blat_out_psl)
+    cmd_run(cmd_string, cwd=tmp_work_dir, silence=True)
 
-    query_seq_list = [query_seq_dir[i] for i in query_seq_dir]
-    target_seq_list = (target_seq_dir[i] for i in target_seq_dir)
-
-    genblasta_job = GenBlastAJob(
-        query_seq_list, target_seq_list, args.output_dir, blast_type='n2n')
-    genblasta_job.run()
-
-    genblasta_out_dir = {i[0]: i[1] for i in genblasta_job.parse_output(True)}
-
-    best_genblast_hit = genblasta_out_dir[query_seq_list[0].seqname][0]
+    # read pslx
+    psl_gf_dict = read_psl_file(blat_out_psl)
+    best_hit_id = sorted(
+        psl_gf_dict, key=lambda x: psl_gf_dict[x].qualifiers['match'], reverse=True)[0]
+    best_hit_range = psl_gf_dict[best_hit_id]
 
     # extract best subject hit
-    best_hit_range = best_genblast_hit.rangeB
-
-    s_file = genblasta_job.work_dir + "/best_gba_hit_flank.fa"
+    s_file = tmp_work_dir + "/best_gba_hit_flank.fa"
 
     s_flank_start = max(best_hit_range.start - 1000, 1)
     s_flank_end = min(best_hit_range.end + 1000,
                       target_seq_dir[best_hit_range.chr_id].seqs_length())
     s_seq = str(
         target_seq_dir[best_hit_range.chr_id].faidx[s_flank_start - 1:s_flank_end])
-    s_base = s_flank_start
     if best_hit_range.strand == "-":
         s_seq = reverse_complement(s_seq)
-        s_base = s_flank_end
 
     with open(s_file, 'w') as s:
         s.write(">%s\n%s" % ("best_gba_hit_flank", s_seq))
 
     # blastn
-    blast_out_file = genblasta_job.work_dir + "/best_gba_hit_flank.bls"
+    blast_out_file = tmp_work_dir + "/best_gba_hit_flank.bls"
 
     cmd_string = "makeblastdb -in %s -dbtype nucl" % s_file
-    cmd_run(cmd_string, cwd=genblasta_job.work_dir, silence=True)
+    cmd_run(cmd_string, cwd=tmp_work_dir, silence=True)
     cmd_string = "blastn -query %s -db %s -out %s -outfmt 5 -task blastn -evalue 1e-10 " % (
-        args.query_rRNA_seq, s_file, blast_out_file)
-    cmd_run(cmd_string, cwd=genblasta_job.work_dir, silence=True)
+        rRNA_seq, s_file, blast_out_file)
+    cmd_run(cmd_string, cwd=tmp_work_dir, silence=True)
 
     blastn_output = outfmt5_read(blast_out_file)
     hsp_list = blastn_output[query_seq_list[0].seqname].hit[0].hsp
 
-    query_str_dict = tsv_file_dict_parse(args.query_rRNA_bed, delimiter=",", key_col='name',
+    query_str_dict = tsv_file_dict_parse(rRNA_bed, delimiter=",", key_col='name',
                                          fieldnames=['name', 'contig', 'start', 'end'])
 
     # get each rRNA gene
@@ -123,11 +125,11 @@ def rRNAFinder_main(args):
             f.write(">%s\n%s\n" % (type_name, sub_type_seq))
 
     # blastn again
-    gene_vs_flank_bls = genblasta_job.work_dir + "/gene_vs_flank.bls"
+    gene_vs_flank_bls = tmp_work_dir + "/gene_vs_flank.bls"
 
     cmd_string = "blastn -query %s -db %s -out %s -outfmt 5 -task blastn -evalue 1e-10 " % (
         rRNA_gene_file, s_file, gene_vs_flank_bls)
-    cmd_run(cmd_string, cwd=genblasta_job.work_dir, silence=True)
+    cmd_run(cmd_string, cwd=tmp_work_dir, silence=True)
 
     blastn_output = outfmt5_read(gene_vs_flank_bls)
 
@@ -200,4 +202,4 @@ def rRNAFinder_main(args):
     with open(unit_gff_file, "w") as f:
         GFF.write([rec], f)
 
-    rmdir(genblasta_job.work_dir)
+    rmdir(tmp_work_dir)
